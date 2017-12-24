@@ -3,7 +3,6 @@ import sys, socket, json, i3msg as i3
 from subprocess import Popen, PIPE
 
 def print_help():
-    #print 'Usage: %s command [argument]' % sys.argv[0]
     print 'Usage: i3groups command [argument]'
     print 'Available commands are:'
     print '\n'.join(['    ' + k for k in cmds.keys()])
