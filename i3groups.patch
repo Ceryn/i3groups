@@ -1,0 +1,127 @@
+diff --git a/i3bar/src/workspaces.c b/i3bar/src/workspaces.c
+index 23324989..aa5f2a7d 100644
+--- a/i3bar/src/workspaces.c
++++ b/i3bar/src/workspaces.c
+@@ -106,6 +106,10 @@ static int workspaces_string_cb(void *params_, const unsigned char *val, size_t
+         const char *ws_name = (const char *)val;
+         params->workspaces_walk->canonical_name = sstrndup(ws_name, len);
+ 
++        /* End the displayed workspace name where the group name starts. */
++        char *group_start = memmem(ws_name, len, "::", 2);
++        len = group_start ? group_start - ws_name : len;
++
+         if (config.strip_ws_numbers && params->workspaces_walk->num >= 0) {
+             /* Special case: strip off the workspace number */
+             static char ws_num[10];
+@@ -152,9 +156,29 @@ static int workspaces_string_cb(void *params_, const unsigned char *val, size_t
+         if (target != NULL) {
+             params->workspaces_walk->output = target;
+ 
+-            TAILQ_INSERT_TAIL(params->workspaces_walk->output->workspaces,
+-                              params->workspaces_walk,
+-                              tailq);
++            i3_ws *ws_walk;
++            int inserted = 0;
++            char *walk_group, *cur_group = strstr(params->workspaces_walk->canonical_name, "::");
++            /* If the workspace is part of a group of workspaces then insert it where it belongs. */
++            if(cur_group) {
++                int grp_n = atoi(cur_group + 2);
++                TAILQ_FOREACH(ws_walk, params->workspaces_walk->output->workspaces, tailq) {
++                    walk_group = strstr(ws_walk->canonical_name, "::");
++                    int walk_n = walk_group ? atoi(walk_group + 2) : 0;
++                    /* Insert by numeric or string sorting, depending on what the workspace name begins with. */
++                    if(!walk_group || (grp_n && (!walk_n || grp_n < walk_n)) || (!grp_n && strcmp(cur_group, walk_group) < 0))  {
++                        TAILQ_INSERT_BEFORE(ws_walk, params->workspaces_walk, tailq);
++                        inserted = 1;
++                        break;
++                    }
++                }
++            }
++            /* Otherwise insert the workspace at the end of the queue. */
++            if(!inserted) {
++                TAILQ_INSERT_TAIL(params->workspaces_walk->output->workspaces,
++                                  params->workspaces_walk,
++                                  tailq);
++            }
+         }
+ 
+         FREE(output_name);
+diff --git a/i3bar/src/xcb.c b/i3bar/src/xcb.c
+index 1a9240fb..26d4b478 100644
+--- a/i3bar/src/xcb.c
++++ b/i3bar/src/xcb.c
+@@ -469,6 +469,23 @@ void handle_button(xcb_button_press_event_t *event) {
+ 
+     TAILQ_FOREACH(ws_walk, walk->workspaces, tailq) {
+         int w = 2 * logical_px(ws_hoff_px) + 2 * logical_px(1) + ws_walk->name_width;
++
++        /* Skip past added group names and separators. */
++        i3_ws *ws_prev = TAILQ_PREV(ws_walk, ws_head, tailq);
++        char *prev_group = ws_prev ? memmem(ws_prev->canonical_name, strlen(ws_prev->canonical_name), "::", 2) : NULL;
++        char *walk_group = memmem(ws_walk->canonical_name, strlen(ws_walk->canonical_name), "::", 2);
++        int first_ws_in_group = walk_group && *(walk_group + 2) && (!ws_prev || !memmem(ws_prev->canonical_name, strlen(ws_prev->canonical_name), walk_group, strlen(walk_group)));
++        if(ws_prev && (first_ws_in_group || (prev_group && !walk_group))) {
++            workspace_width += logical_px(3);
++        }
++        if(first_ws_in_group) {
++            walk_group = walk_group + 2;
++            i3String *i3group = i3string_from_markup_with_length(walk_group, strlen(walk_group));
++            int i3group_width = predict_text_width(i3group);
++            workspace_width += 2 * logical_px(ws_hoff_px) + 2 * logical_px(1) + i3group_width;
++            workspace_width += logical_px(ws_spacing_px);
++        }
++
+         if (x >= workspace_width && x <= workspace_width + w)
+             clicked_ws = ws_walk;
+         if (ws_walk->visible)
+@@ -1976,6 +1993,50 @@ void draw_bars(bool unhide) {
+                     unhide = true;
+                 }
+ 
++                /* Get group names of this and the previous workspace. */
++                i3_ws *ws_prev = TAILQ_PREV(ws_walk, ws_head, tailq);
++                char *prev_group = ws_prev ? memmem(ws_prev->canonical_name, strlen(ws_prev->canonical_name), "::", 2) : NULL;
++                char *walk_group = memmem(ws_walk->canonical_name, strlen(ws_walk->canonical_name), "::", 2);
++
++                /* If this work space is part of a group of workspaces, determine if it is the first in its group. */
++                int first_ws_in_group = walk_group && *(walk_group + 2) && (!ws_prev || !memmem(ws_prev->canonical_name, strlen(ws_prev->canonical_name), walk_group, strlen(walk_group)));
++
++                /* Add some pixels between groups to separate them. */
++                if(ws_prev && (first_ws_in_group || (prev_group && !walk_group))) {
++                    workspace_width += logical_px(3);
++                }
++
++                /* Draw the workspace group name before its workspaces. */
++                if(first_ws_in_group) {
++                    walk_group = walk_group + 2;
++
++                    i3String *i3group = i3string_from_markup_with_length(walk_group, strlen(walk_group));
++                    int i3group_width = predict_text_width(i3group);
++
++                    /* Draw the border of the button. */
++                    draw_util_rectangle(&(outputs_walk->buffer), colors.inactive_ws_border,
++                                        workspace_width,
++                                        logical_px(1),
++                                        i3group_width + 2 * logical_px(ws_hoff_px) + 2 * logical_px(1),
++                                        font.height + 2 * logical_px(ws_voff_px) - 2 * logical_px(1));
++
++                    /* Draw the inside of the button. */
++                    draw_util_rectangle(&(outputs_walk->buffer), colors.bar_bg,
++                                        workspace_width + logical_px(1),
++                                        2 * logical_px(1),
++                                        i3group_width + 2 * logical_px(ws_hoff_px),
++                                        font.height + 2 * logical_px(ws_voff_px) - 4 * logical_px(1));
++
++                    draw_util_text(i3group, &(outputs_walk->buffer), colors.inactive_ws_fg, colors.inactive_ws_bg,
++                                   workspace_width + logical_px(ws_hoff_px) + logical_px(1),
++                                   logical_px(ws_voff_px),
++                                   i3group_width);
++
++                    workspace_width += 2 * logical_px(ws_hoff_px) + 2 * logical_px(1) + i3group_width;
++                    workspace_width += logical_px(ws_spacing_px);
++                }
++
++                /* Then draw the actual workspace names with buttons. */
+                 /* Draw the border of the button. */
+                 draw_util_rectangle(&(outputs_walk->buffer), border_color,
+                                     workspace_width,
