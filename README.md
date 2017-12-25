@@ -38,7 +38,7 @@ cd ~/
 git clone https://github.com/Ceryn/i3groups.git
 ```
 
-[Set up i3msg-python](https://github.com/Ceryn/i3msg-python) (`sudo pip install i3msg`) or just wget the script:
+[Set up i3msg-python](https://github.com/Ceryn/i3msg-python) (`pip install i3msg --user`) or just wget the script:
 ```Bash
 wget https://raw.githubusercontent.com/Ceryn/i3msg-python/master/i3msg.py
 touch __init__.py
