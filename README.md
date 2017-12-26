@@ -19,7 +19,7 @@ i3groups lets you:
 i3groups consists of a ~120 and a ~30 line Python script for managing groups, a ~90 line patch to the i3bar C source to handle grouped workspaces correctly and ~30 i3 keybindings.
 
 <sub>\* Some of these features are enabled by native i3, but have been incorporated in the i3groups workflow as they work particularly well with other features.</sub>  
-<sup>\*\* Thanks to TODO FIND NICK for making a cleaner solution to figuring out the next workspace number.</sup>
+<sup>\*\* Thanks to nervengift for making a cleaner solution to figuring out the next workspace number.</sup>
 
 Demo
 ---
